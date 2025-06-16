@@ -69,7 +69,6 @@ private:
 
 	HRESULT _EnumerateSetSerialization();
 	HRESULT _EnumerateCredentials();
-	void _ReleaseEnumeratedCredentials();
 	void _CleanupSetSerialization();
 
 private:
@@ -79,5 +78,6 @@ private:
 	KERB_INTERACTIVE_UNLOCK_LOGON* _pkiulSetSerialization;
 	DWORD _dwSetSerializationCred;
 	bool _bAutoSubmitSetSerializationCred;
+	bool _bAutoLogonWithDefault;
 	CREDENTIAL_PROVIDER_USAGE_SCENARIO _cpus;
 };

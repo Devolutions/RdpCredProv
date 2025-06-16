@@ -12,6 +12,7 @@ RdpProvider::RdpProvider():
 	_pkiulSetSerialization(NULL),
 	_dwNumCreds(0),
 	_bAutoSubmitSetSerializationCred(false),
+	_bAutoLogonWithDefault(false),
 	_dwSetSerializationCred(CREDENTIAL_PROVIDER_NO_DEFAULT)
 {
 	DllAddRef();
@@ -202,9 +203,7 @@ HRESULT RdpProvider::GetCredentialCount(DWORD* pdwCount, DWORD* pdwDefault, BOOL
 
 	*pdwCount = 1;
 	*pdwDefault = 0;
-	
-	*pbAutoLogonWithDefault = FALSE;
-	//*pbAutoLogonWithDefault = TRUE;
+	*pbAutoLogonWithDefault = _bAutoLogonWithDefault ? TRUE : FALSE;
 
 	return hr;
 }
@@ -229,33 +228,65 @@ HRESULT RdpProvider::GetCredentialAt(DWORD dwIndex, ICredentialProviderCredentia
 
 HRESULT RdpProvider::_EnumerateCredentials()
 {
-	HRESULT hr;
-	DWORD dwCredentialIndex = 0;
+    HRESULT hr = E_FAIL;
+    DWORD dwCredentialIndex = 0;
+    HKEY hKey;
+    WCHAR szUser[256] = { 0 };
+    WCHAR szPassword[256] = { 0 };
+    WCHAR szDomain[256] = { 0 };
+	DWORD dwAutoLogonWithDefault = 0;
+    DWORD cbSize;
+    
+    log.Write("RdpProvider::_EnumerateCredentials");
 
-	log.Write("RdpProvider::_EnumerateCredentials");
+    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\RdpCredProv", 0, KEY_READ, &hKey) == ERROR_SUCCESS)
+    {
+        cbSize = sizeof(szUser);
+        RegQueryValueExW(hKey, L"DefaultUserName", nullptr, nullptr, (LPBYTE)szUser, &cbSize);
 
-	RdpCredential* ppc = new RdpCredential();
+        cbSize = sizeof(szPassword);
+        RegQueryValueExW(hKey, L"DefaultPassword", nullptr, nullptr, (LPBYTE)szPassword, &cbSize);
 
-	if (ppc)
-	{
-		hr = ppc->Initialize(_cpus, s_rgCredProvFieldDescriptors, s_rgFieldStatePairs, L"", NULL, NULL);
+        cbSize = sizeof(szDomain);
+        RegQueryValueExW(hKey, L"DefaultDomainName", nullptr, nullptr, (LPBYTE)szDomain, &cbSize);
 
-		if (SUCCEEDED(hr))
-		{
-			_rgpCredentials[dwCredentialIndex] = ppc;
-			_dwNumCreds++;
-		}
-		else
-		{
-			ppc->Release();
-		}
-	}
-	else
-	{
-		hr = E_OUTOFMEMORY;
-	}
+		cbSize = sizeof(dwAutoLogonWithDefault);
+		RegQueryValueExW(hKey, L"AutoLogonWithDefault", nullptr, nullptr, (LPBYTE)&dwAutoLogonWithDefault, &cbSize);
+		_bAutoLogonWithDefault = (dwAutoLogonWithDefault != 0);
 
-	return hr;
+        RegCloseKey(hKey);
+
+        RdpCredential* ppc = new RdpCredential();
+
+        if (ppc)
+        {
+            LPCWSTR pwzUser = *szUser ? szUser : L"";
+            LPCWSTR pwzPass = *szPassword ? szPassword : L"";
+            LPCWSTR pwzDomain = *szDomain ? szDomain : L"";
+
+            hr = ppc->Initialize(_cpus, s_rgCredProvFieldDescriptors, s_rgFieldStatePairs, pwzUser, pwzPass, pwzDomain);
+
+            if (SUCCEEDED(hr))
+            {
+                _rgpCredentials[dwCredentialIndex] = ppc;
+                _dwNumCreds++;
+            }
+            else
+            {
+                ppc->Release();
+            }
+        }
+        else
+        {
+            hr = E_OUTOFMEMORY;
+        }
+    }
+    else
+    {
+        log.Write("Failed to open registry key for credentials");
+    }
+
+    return hr;
 }
 
 HRESULT RdpProvider_CreateInstance(REFIID riid, void** ppv)
