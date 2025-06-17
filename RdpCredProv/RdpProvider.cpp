@@ -15,6 +15,7 @@ RdpProvider::RdpProvider():
 	_pkiulSetSerialization(NULL),
 	_dwNumCreds(0),
 	_bLogEnabled(false),
+	_bRemoteOnly(true),
 	_bAutoSubmitSetSerializationCred(false),
 	_bAutoLogonWithDefault(false),
 	_bUseDefaultCredentials(false),
@@ -26,12 +27,20 @@ RdpProvider::RdpProvider():
 	ZeroMemory(_rgpCredentials, sizeof(_rgpCredentials));
 
 	HKEY hKey;
+	DWORD cbSize;
+
 	if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, RDPCREDPROV_REGPATH, 0, KEY_READ, &hKey) == ERROR_SUCCESS)
 	{
 		DWORD dwLogEnabled = 0;
-		DWORD cbSize = sizeof(dwLogEnabled);
+		cbSize = sizeof(dwLogEnabled);
 		RegQueryValueExW(hKey, L"LogEnabled", nullptr, nullptr, (LPBYTE)&dwLogEnabled, &cbSize);
 		_bLogEnabled = dwLogEnabled ? true : false;
+
+		DWORD dwRemoteOnly = 1;
+		cbSize = sizeof(dwRemoteOnly);
+		RegQueryValueExW(hKey, L"RemoteOnly", nullptr, nullptr, (LPBYTE)&dwRemoteOnly, &cbSize);
+		_bRemoteOnly = dwRemoteOnly ? true : false;
+
 		RegCloseKey(hKey);
 	}
 
@@ -103,10 +112,10 @@ HRESULT RdpProvider::SetUsageScenario(CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus, D
 
 	static bool s_bCredsEnumerated = false;
 
-#ifdef RDPCREDPROV_RESTRICTED
-	if (cpus == CPUS_CREDUI)
-		return E_NOTIMPL;
-#endif
+	if (_bRemoteOnly) {
+		if (cpus == CPUS_CREDUI)
+			return E_NOTIMPL;
+	}
 
 	switch (cpus)
 	{
@@ -290,16 +299,16 @@ HRESULT RdpProvider::_EnumerateCredentials()
     
     log.Write("RdpProvider::_EnumerateCredentials");
 
-    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, RDPCREDPROV_REGPATH, 0, KEY_READ, &hKey) == ERROR_SUCCESS)
-    {
-        cbSize = sizeof(szUser);
-        RegQueryValueExW(hKey, L"DefaultUserName", nullptr, nullptr, (LPBYTE)szUser, &cbSize);
+	if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, RDPCREDPROV_REGPATH, 0, KEY_READ, &hKey) == ERROR_SUCCESS)
+	{
+		cbSize = sizeof(szUser);
+		RegQueryValueExW(hKey, L"DefaultUserName", nullptr, nullptr, (LPBYTE)szUser, &cbSize);
 
-        cbSize = sizeof(szPassword);
-        RegQueryValueExW(hKey, L"DefaultPassword", nullptr, nullptr, (LPBYTE)szPassword, &cbSize);
+		cbSize = sizeof(szPassword);
+		RegQueryValueExW(hKey, L"DefaultPassword", nullptr, nullptr, (LPBYTE)szPassword, &cbSize);
 
-        cbSize = sizeof(szDomain);
-        RegQueryValueExW(hKey, L"DefaultDomainName", nullptr, nullptr, (LPBYTE)szDomain, &cbSize);
+		cbSize = sizeof(szDomain);
+		RegQueryValueExW(hKey, L"DefaultDomainName", nullptr, nullptr, (LPBYTE)szDomain, &cbSize);
 
 		cbSize = sizeof(dwAutoLogonWithDefault);
 		RegQueryValueExW(hKey, L"AutoLogonWithDefault", nullptr, nullptr, (LPBYTE)&dwAutoLogonWithDefault, &cbSize);
@@ -309,37 +318,41 @@ HRESULT RdpProvider::_EnumerateCredentials()
 		RegQueryValueExW(hKey, L"UseDefaultCredentials", nullptr, nullptr, (LPBYTE)&dwUseDefaultCredentials, &cbSize);
 		_bUseDefaultCredentials = (dwUseDefaultCredentials != 0);
 
-        RegCloseKey(hKey);
+		RegCloseKey(hKey);
+	}
 
-        RdpCredential* ppc = new RdpCredential();
+	RdpCredential* ppc = nullptr;
 
-        if (ppc)
-        {
-            LPCWSTR pwzUser = *szUser ? szUser : L"";
-            LPCWSTR pwzPassword = *szPassword ? szPassword : L"";
-            LPCWSTR pwzDomain = *szDomain ? szDomain : L"";
+	if (_bRemoteOnly && !GetSystemMetrics(SM_REMOTESESSION)) {
+		hr = E_FAIL;
+	}
+	else {
+		ppc = new RdpCredential();
 
-            hr = ppc->Initialize(_cpus, s_rgCredProvFieldDescriptors, s_rgFieldStatePairs, pwzUser, pwzPassword, pwzDomain);
+		if (ppc)
+		{
+			LPCWSTR pwzUser = *szUser ? szUser : L"";
+			LPCWSTR pwzPassword = *szPassword ? szPassword : L"";
+			LPCWSTR pwzDomain = *szDomain ? szDomain : L"";
 
-            if (SUCCEEDED(hr))
-            {
-                _rgpCredentials[dwCredentialIndex] = ppc;
-                _dwNumCreds++;
-            }
-            else
-            {
-                ppc->Release();
-            }
-        }
-        else
-        {
-            hr = E_OUTOFMEMORY;
-        }
-    }
-    else
-    {
-        log.Write("Failed to open registry key for credentials");
-    }
+			hr = ppc->Initialize(_cpus, s_rgCredProvFieldDescriptors, s_rgFieldStatePairs, pwzUser, pwzPassword, pwzDomain);
+
+			if (SUCCEEDED(hr))
+			{
+				_rgpCredentials[dwCredentialIndex] = ppc;
+				_dwNumCreds++;
+			}
+			else
+			{
+				ppc->Release();
+				ppc = nullptr;
+			}
+		}
+
+		if (!ppc) {
+			hr = E_FAIL;
+		}
+	}
 
     return hr;
 }
@@ -370,6 +383,10 @@ HRESULT RdpProvider::_EnumerateSetSerialization()
 	log.Write("RdpProvider::_EnumerateSetSerialization");
 
 	_bAutoSubmitSetSerializationCred = false;
+
+	if (_bRemoteOnly && !GetSystemMetrics(SM_REMOTESESSION)) {
+		return E_FAIL;
+	}
 
 	WCHAR wszUsername[MAX_PATH] = { 0 };
 	WCHAR wszPassword[MAX_PATH] = { 0 };

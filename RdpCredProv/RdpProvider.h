@@ -74,6 +74,7 @@ private:
 	RdpCredential *_rgpCredentials[MAX_CREDENTIALS];
 	DWORD _dwNumCreds;
 	bool _bLogEnabled;
+	bool _bRemoteOnly;
 	KERB_INTERACTIVE_UNLOCK_LOGON* _pkiulSetSerialization;
 	DWORD _dwSetSerializationCred;
 	bool _bAutoSubmitSetSerializationCred;

@@ -12,7 +12,8 @@ extern CLogFile log;
 RdpCredential::RdpCredential():
 	_cRef(1),
 	_pCredProvCredentialEvents(NULL),
-	_cpus(CPUS_INVALID)
+	_cpus(CPUS_INVALID),
+	pwszDomain(nullptr)
 {
 	DllAddRef();
 
@@ -54,11 +55,6 @@ HRESULT RdpCredential::Initialize(CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus,
 	HRESULT hr = S_OK;
 
 	log.Write("RdpCredential::Initialize");
-
-#ifdef RDPCREDPROV_RESTRICTED
-	if (!GetSystemMetrics(SM_REMOTESESSION))
-		return E_FAIL; /* disable usage outside of remote desktop environment */
-#endif
 
 	_cpus = cpus;
 
@@ -248,15 +244,10 @@ HRESULT RdpCredential::SetStringValue(DWORD dwFieldID, PCWSTR pwz)
 	HRESULT hr;
 	PSTR pz = NULL;
 
-	if (pwz)
-		ConvertFromUnicode(CP_UTF8, 0, pwz, -1, &pz, 0, NULL, NULL);
+	// don't log the value, because it can include typed credentials
+	log.Write("RdpCredential::SetStringValue: dwFieldID: %d", (int) dwFieldID);
 
-	log.Write("RdpCredential::SetStringValue: dwFieldID: %d pwz: %s", (int) dwFieldID, pz ? pz : "");
-
-	if (pz)
-		free(pz);
-
-	if (dwFieldID < ARRAYSIZE(_rgCredProvFieldDescriptors) && 
+	if ((dwFieldID < ARRAYSIZE(_rgCredProvFieldDescriptors)) && 
 		(CPFT_EDIT_TEXT == _rgCredProvFieldDescriptors[dwFieldID].cpft || 
 		CPFT_PASSWORD_TEXT == _rgCredProvFieldDescriptors[dwFieldID].cpft)) 
 	{
@@ -345,7 +336,7 @@ HRESULT RdpCredential::GetSerialization(CREDENTIAL_PROVIDER_GET_SERIALIZATION_RE
 
 	log.Write("RdpCredential::GetSerialization");
 
-	if (!pwszDomain || (wcslen(pwszDomain) < 1))
+	if (pwszDomain && (!wcscmp(pwszDomain, L".")))
 	{
 		WCHAR wsz[MAX_COMPUTERNAME_LENGTH + 1];
 		DWORD cch = ARRAYSIZE(wsz);
@@ -368,7 +359,17 @@ HRESULT RdpCredential::GetSerialization(CREDENTIAL_PROVIDER_GET_SERIALIZATION_RE
 	{
 		KERB_INTERACTIVE_UNLOCK_LOGON kiul;
 
-		hr = KerbInteractiveUnlockLogonInit(pwszDomain, _rgFieldStrings[SFI_USERNAME], pwzProtectedPassword, _cpus, &kiul);
+		PWSTR pwszUserName = _rgFieldStrings[SFI_USERNAME];
+
+		char* pszUserName = NULL;
+		char* pszDomain = NULL;
+
+		ConvertFromUnicode(CP_UTF8, 0, pwszUserName, -1, &pszUserName, 0, NULL, NULL);
+		ConvertFromUnicode(CP_UTF8, 0, pwszDomain, -1, &pszDomain, 0, NULL, NULL);
+
+		log.Write("KerbInteractiveUnlockLogonInit: UserName: '%s' Domain: '%s'", pszUserName, pszDomain);
+
+		hr = KerbInteractiveUnlockLogonInit(pwszDomain, pwszUserName, pwzProtectedPassword, _cpus, &kiul);
 
 		if (SUCCEEDED(hr))
 		{
@@ -383,7 +384,6 @@ HRESULT RdpCredential::GetSerialization(CREDENTIAL_PROVIDER_GET_SERIALIZATION_RE
 				{
 					pcpcs->ulAuthenticationPackage = ulAuthPackage;
 					pcpcs->clsidCredentialProvider = CLSID_RdpProvider;
-
 					*pcpgsr = CPGSR_RETURN_CREDENTIAL_FINISHED;
 				}
 			}
@@ -394,6 +394,7 @@ HRESULT RdpCredential::GetSerialization(CREDENTIAL_PROVIDER_GET_SERIALIZATION_RE
 
 	return hr;
 }
+
 struct REPORT_RESULT_STATUS_INFO
 {
 	NTSTATUS ntsStatus;
