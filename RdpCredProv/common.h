@@ -8,8 +8,6 @@
 #include <intsafe.h>
 #include <shlguid.h>
 
-#define RDPCREDPROV_RESTRICTED		1 /* enable restricting usage to the remote desktop environment only */
-
 #define RDPCREDPROV_REGPATH	L"SOFTWARE\\Devolutions\\RdpCredProv"
 
 enum SAMPLE_FIELD_ID 

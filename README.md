@@ -1,6 +1,6 @@
 # RdpCredProv
 
-This is an experimental credential provider with fun features for RDP. Use at your own risk.
+This is an experimental credential provider with fun features for RDP. Use at your own risk. I have built this to get autologon to work with Hyper-V in a lab environment where security is not a concern.
 
 ## Building
 
@@ -21,12 +21,12 @@ Copy-Item RdpCredProv.dll "C:\Windows\System32\RdpCredProv.dll" -Force
 Register it:
 
 ```powershell
-$clsid = "{DD2ACC5E-EF4B-4C89-B296-15489C9FAC47}"
-$basePath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\$clsid"
+$RdpCredProvClsid = "{DD2ACC5E-EF4B-4C89-B296-15489C9FAC47}"
+$basePath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\$RdpCredProvClsid"
 New-Item -Path $basePath -Force | Out-Null
 Set-ItemProperty -Path $basePath -Name "(default)" -Value "RdpCredProv"
-$clsidRegPath = "CLSID\$clsid"
-$inprocPath = "CLSID\$clsid\InprocServer32"
+$clsidRegPath = "CLSID\$RdpCredProvClsid"
+$inprocPath = "CLSID\$$RdpCredProvClsid\InprocServer32"
 $regHKCR = [Microsoft.Win32.Registry]::ClassesRoot
 $cpKey = $regHKCR.CreateSubKey($clsidRegPath)
 $cpKey.SetValue("", "RdpCredProv")
@@ -51,7 +51,14 @@ Set-ItemProperty -Path $RdpCredProvRegPath -Name "AutoLogonWithDefault" -Value 1
 Set-ItemProperty -Path $RdpCredProvRegPath -Name "UseDefaultCredentials" -Value 1 -Type DWORD
 ```
 
-Those credentials will be used automatically in the Hyper-V enhanced session mode. Local accounts work, domain accounts still fail, I have to look into it.
+Those credentials will be used automatically in the Hyper-V enhanced session mode. If you want to enable autologon in the Hyper-V basic session mode, set the following registry keys:
+
+```powershell
+$RdpCredProvRegPath = "HKLM:\SOFTWARE\Devolutions\RdpCredProv"
+Set-ItemProperty -Path $RdpCredProvRegPath -Name "RemoteOnly" -Value 0 -Type DWORD
+$WinlogonRegPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
+Set-ItemProperty -Path $WinlogonRegPath -Name "DisableCAD" -Value 1 -Type DWORD
+```
 
 ## Logging
 
@@ -67,19 +74,16 @@ Set-ItemProperty -Path $RdpCredProvRegPath -Name "LogEnabled" -Value 1 -Type DWO
 Unregister the credential provider:
 
 ```powershell
-$clsid = "{DD2ACC5E-EF4B-4C89-B296-15489C9FAC47}"
-$basePath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\$clsid"
+$RdpCredProvClsid = "{DD2ACC5E-EF4B-4C89-B296-15489C9FAC47}"
+$basePath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\$RdpCredProvClsid"
+$clsidRegPath = "CLSID\$RdpCredProvClsid"
 if (Test-Path $basePath) {
     Remove-Item -Path $basePath -Recurse -Force
-    Write-Host "✅ Removed: $basePath"
 }
-$clsidRegPath = "CLSID\$clsid"
 try {
     $regHKCR = [Microsoft.Win32.Registry]::ClassesRoot
     $regHKCR.DeleteSubKeyTree($clsidRegPath)
-} catch {
-
-}
+} catch { }
 ```
 
 Reboot the machine or kill Winlogon.exe, then delete RdpCredProv.dll:
