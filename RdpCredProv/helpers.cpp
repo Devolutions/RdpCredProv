@@ -245,7 +245,7 @@ void KerbInteractiveUnlockLogonUnpackInPlace(__inout_bcount(cb) KERB_INTERACTIVE
 HRESULT LsaInitString(PSTRING pszDestinationString, PCSTR pszSourceString)
 {
 	size_t cchLength;
-	HRESULT hr = StringCchLength(pszSourceString, USHORT_MAX, &cchLength);
+	HRESULT hr = StringCchLengthA(pszSourceString, USHORT_MAX, &cchLength);
 
 	if (SUCCEEDED(hr))
 	{
@@ -275,7 +275,7 @@ HRESULT RetrieveNegotiateAuthPackage(ULONG* pulAuthPackage)
 
 		ULONG ulAuthPackage;
 		LSA_STRING lsaszKerberosName;
-		LsaInitString(&lsaszKerberosName, NEGOSSP_NAME);
+		LsaInitString(&lsaszKerberosName, NEGOSSP_NAME_A);
 
 		status = LsaLookupAuthenticationPackage(hLsa, &lsaszKerberosName, &ulAuthPackage);
 
@@ -470,68 +470,23 @@ int ConvertFromUnicode(UINT CodePage, DWORD dwFlags, LPCWSTR lpWideCharStr, int 
 CLogFile::CLogFile()
 {
 	m_enabled = true;
-
-#ifndef RDPCREDPROV_LOGGING
-	m_enabled = false;
-#endif
+	InitializeCriticalSection(&m_cs);
 }
 
 CLogFile::~CLogFile()
 {
 	if (m_enabled)
 		CloseFile();
+
+	DeleteCriticalSection(&m_cs);
 }
 
-void CLogFile::OpenFile(LPCTSTR strFile, bool bAppend, long lTruncate)
+void CLogFile::OpenFile(const char* filename)
 {
-	m_lTruncate = lTruncate;
-
 	if (!m_enabled)
 		return;
 
-	memcpy(m_filename, strFile, _tcslen(strFile));
-
-	TCHAR szFile[MAX_PATH + 1];
-
-	if (_tcslen(strFile) > 3 && strFile[1] != ':')
-	{
-		::GetModuleFileName(NULL, szFile, MAX_PATH);
-		
-		long llength = (long) _tcslen(szFile);
-		TCHAR* pcat = szFile + (llength - 1);
-
-		while (llength--)
-		{
-			pcat--;
-
-			if (*pcat == '\\')
-				break;
-		}
-
-		if (*pcat == '\\')
-		{
-			pcat++;
-			_tcscpy(pcat, strFile);
-		}
-		else
-		{
-			_tcscpy(szFile, strFile);
-		}
-	}
-	else
-	{
-		_tcscpy(szFile, strFile);
-	}
-
-	m_pLogFile = fopen(szFile, bAppend ? "a" : "w");
-
-	if (!m_pLogFile)
-	{
-		CreateDirectories(szFile);
-		m_pLogFile = fopen(szFile, bAppend ? "a" : "w");
-	}
-
-	InitializeCriticalSection(&m_cs);
+	m_pLogFile = fopen(filename, "w+b");
 }
 
 void CLogFile::CloseFile()
@@ -543,42 +498,9 @@ void CLogFile::CloseFile()
 	{
 		fclose(m_pLogFile);
 	}
-
-	DeleteCriticalSection(&m_cs);
 }
 
-void CLogFile::CreateDirectories(LPCTSTR filename)
-{
-	char drivename[4];
-	char path[MAX_PATH + 1];
-	char name[MAX_PATH + 1];
-	char ext[MAX_PATH + 1];
-	char seps[] = "/\\";
-	char* token;
-
-	if (!m_enabled)
-		return;
-
-	_splitpath(filename, drivename, path, name, ext);
-
-	sprintf(drivename, "%s\\", drivename);
-	_chdir(drivename);
-
-	token = strtok(path, seps);
-
-	while (token != NULL)
-	{
-		if (_chdir(token) == -1)	
-		{
-			_mkdir(token);
-			_chdir(token);
-		}
-
-		token = strtok(NULL, seps);
-	}
-}
-
-void CLogFile::Write(LPCTSTR pszFormat, ...)
+void CLogFile::Write(const char* pszFormat, ...)
 {
 	if (!m_enabled)
 		return;
@@ -588,7 +510,7 @@ void CLogFile::Write(LPCTSTR pszFormat, ...)
 
 	EnterCriticalSection(&m_cs);
 	
-	TCHAR szLog[256];
+	char szLog[256];
 	va_list argList;
 	va_start(argList, pszFormat);
 	vsprintf(szLog, pszFormat, argList);
@@ -596,7 +518,7 @@ void CLogFile::Write(LPCTSTR pszFormat, ...)
 
 	SYSTEMTIME time;
 	::GetLocalTime(&time);
-	TCHAR szLine[256];
+	char szLine[256];
 
 	sprintf(szLine, "%04d/%02d/%02d %02d:%02d:%02d: %s\n",
 		time.wYear, time.wMonth, time.wDay,

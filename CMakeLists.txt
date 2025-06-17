@@ -1,6 +1,6 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.16)
 
-project(RdpCredentialProvider C CXX)
+project(RdpCredProv C CXX)
 
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
@@ -35,7 +35,7 @@ endif()
 
 if(WIN32)
 	set(C_FLAGS "")
-	#set(C_FLAGS "${C_FLAGS} -D_UNICODE")
+	set(C_FLAGS "${C_FLAGS} -D_UNICODE")
 	set(C_FLAGS "${C_FLAGS} -D_CRT_SECURE_NO_WARNINGS")
 	set(C_FLAGS "${C_FLAGS} -DWIN32_LEAN_AND_MEAN")
 	set(C_FLAGS "${C_FLAGS} -D_WINSOCK_DEPRECATED_NO_WARNINGS")
@@ -45,4 +45,3 @@ if(WIN32)
 endif()
 
 add_subdirectory(RdpCredProv)
-add_subdirectory(RdpCredUI)

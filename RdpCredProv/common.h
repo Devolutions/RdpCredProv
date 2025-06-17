@@ -1,6 +1,5 @@
 
 #pragma once
-#include <tchar.h>
 #include <strsafe.h>
 #include <credentialprovider.h>
 #include <ntsecapi.h>
@@ -9,10 +8,9 @@
 #include <intsafe.h>
 #include <shlguid.h>
 
-#define MAX_ULONG  ((ULONG)(-1))
-
-#define RDPCREDPROV_LOGGING		1 /* enable text file logging (%systemroot%\System32\RdpCredentialProvider.txt) */
 #define RDPCREDPROV_RESTRICTED		1 /* enable restricting usage to the remote desktop environment only */
+
+#define RDPCREDPROV_REGPATH	L"SOFTWARE\\Devolutions\\RdpCredProv"
 
 enum SAMPLE_FIELD_ID 
 {

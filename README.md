@@ -42,15 +42,25 @@ $inprocKey.Close()
 Set default credentials to be used:
 
 ```powershell
-$RdpCredProvRegPath = "HKLM:\SOFTWARE\RdpCredProv"
+$RdpCredProvRegPath = "HKLM:\SOFTWARE\Devolutions\RdpCredProv"
 New-Item -Path $RdpCredProvRegPath -Force | Out-Null
 Set-ItemProperty -Path $RdpCredProvRegPath -Name "DefaultUserName" -Value "Administrator"
 Set-ItemProperty -Path $RdpCredProvRegPath -Name "DefaultPassword" -Value "LabUser123!"
 Set-ItemProperty -Path $RdpCredProvRegPath -Name "DefaultDomainName" -Value "."
 Set-ItemProperty -Path $RdpCredProvRegPath -Name "AutoLogonWithDefault" -Value 1 -Type DWORD
+Set-ItemProperty -Path $RdpCredProvRegPath -Name "UseDefaultCredentials" -Value 1 -Type DWORD
 ```
 
 Those credentials will be used automatically in the Hyper-V enhanced session mode. Local accounts work, domain accounts still fail, I have to look into it.
+
+## Logging
+
+To enable logging, set the **LogEnabled** registry key. The log files will be located in "%ProgramData%\RdpCredProv":
+
+```powershell
+$RdpCredProvRegPath = "HKLM:\SOFTWARE\Devolutions\RdpCredProv"
+Set-ItemProperty -Path $RdpCredProvRegPath -Name "LogEnabled" -Value 1 -Type DWORD
+```
 
 ## Uninstallation
 

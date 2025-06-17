@@ -11,7 +11,8 @@ extern CLogFile log;
 
 RdpCredential::RdpCredential():
 	_cRef(1),
-	_pCredProvCredentialEvents(NULL)
+	_pCredProvCredentialEvents(NULL),
+	_cpus(CPUS_INVALID)
 {
 	DllAddRef();
 

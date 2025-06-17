@@ -1,6 +1,7 @@
 
 #include <windows.h>
 #include <unknwn.h>
+#include <objbase.h>
 #include "Dll.h"
 #include "guid.h"
 
@@ -147,7 +148,7 @@ void DllRelease()
 	InterlockedDecrement(&g_cRef);
 }
 
-STDAPI DllCanUnloadNow()
+STDAPI DllCanUnloadNow(void)
 {
 	HRESULT hr;
 

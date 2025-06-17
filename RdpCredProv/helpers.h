@@ -38,17 +38,14 @@ public:
 	CLogFile();
 	~CLogFile();
 
-	void OpenFile(LPCTSTR strFile, bool bAppend = TRUE, long lTruncate = 4096);
+	void OpenFile(const char* filename);
 	void CloseFile();
 
-	void Write(LPCTSTR pszFormat, ...);
+	void Write(const char* pszFormat, ...);
+
+	bool m_enabled = false;
 
 private:
-	void CreateDirectories(LPCTSTR filename);
-
-	bool m_enabled;
-	FILE* m_pLogFile;
-	long m_lTruncate;
+	FILE* m_pLogFile = NULL;
 	CRITICAL_SECTION m_cs;
-	char m_filename[MAX_PATH];
 };

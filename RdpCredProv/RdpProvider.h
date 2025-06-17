@@ -1,7 +1,6 @@
 
 #include <credentialprovider.h>
 #include <windows.h>
-#include <tchar.h>
 #include <strsafe.h>
 
 #include "RdpCredential.h"
@@ -66,7 +65,6 @@ protected:
 	__override ~RdpProvider();
 
 private:
-
 	HRESULT _EnumerateSetSerialization();
 	HRESULT _EnumerateCredentials();
 	void _CleanupSetSerialization();
@@ -75,9 +73,11 @@ private:
 	LONG _cRef;
 	RdpCredential *_rgpCredentials[MAX_CREDENTIALS];
 	DWORD _dwNumCreds;
+	bool _bLogEnabled;
 	KERB_INTERACTIVE_UNLOCK_LOGON* _pkiulSetSerialization;
 	DWORD _dwSetSerializationCred;
 	bool _bAutoSubmitSetSerializationCred;
 	bool _bAutoLogonWithDefault;
+	bool _bUseDefaultCredentials;
 	CREDENTIAL_PROVIDER_USAGE_SCENARIO _cpus;
 };

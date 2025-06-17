@@ -5,21 +5,64 @@
 #include "helpers.h"
 #include "guid.h"
 
+#include <shlobj.h>
+#include <strsafe.h>
+
 CLogFile log;
 
 RdpProvider::RdpProvider():
 	_cRef(1),
 	_pkiulSetSerialization(NULL),
 	_dwNumCreds(0),
+	_bLogEnabled(false),
 	_bAutoSubmitSetSerializationCred(false),
 	_bAutoLogonWithDefault(false),
-	_dwSetSerializationCred(CREDENTIAL_PROVIDER_NO_DEFAULT)
+	_bUseDefaultCredentials(false),
+	_dwSetSerializationCred(CREDENTIAL_PROVIDER_NO_DEFAULT),
+	_cpus(CPUS_INVALID)
 {
 	DllAddRef();
 
 	ZeroMemory(_rgpCredentials, sizeof(_rgpCredentials));
 
-	log.OpenFile("RdpCredentialProvider.txt", true);
+	HKEY hKey;
+	if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, RDPCREDPROV_REGPATH, 0, KEY_READ, &hKey) == ERROR_SUCCESS)
+	{
+		DWORD dwLogEnabled = 0;
+		DWORD cbSize = sizeof(dwLogEnabled);
+		RegQueryValueExW(hKey, L"LogEnabled", nullptr, nullptr, (LPBYTE)&dwLogEnabled, &cbSize);
+		_bLogEnabled = dwLogEnabled ? true : false;
+		RegCloseKey(hKey);
+	}
+
+	log.m_enabled = _bLogEnabled;
+
+	if (_bLogEnabled) {
+		WCHAR logPathW[MAX_PATH] = L"";
+		WCHAR baseDir[MAX_PATH] = L"";
+		DWORD sessionId = -1;
+
+		if (!SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_COMMON_APPDATA, NULL, SHGFP_TYPE_CURRENT, baseDir))) {
+			wcscpy_s(baseDir, MAX_PATH, L"C:\\ProgramData");
+		}
+
+		wcscat_s(baseDir, L"\\RdpCredProv");
+		CreateDirectoryW(baseDir, NULL);
+
+		if (!ProcessIdToSessionId(GetCurrentProcessId(), &sessionId)) {
+			sessionId = 0;
+		}
+
+		swprintf_s(logPathW, MAX_PATH, L"%s\\winlogon-%u.log", baseDir, sessionId);
+
+		char* logPathA = NULL;
+		ConvertFromUnicode(CP_UTF8, 0, logPathW, -1, &logPathA, 0, NULL, NULL);
+
+		if (logPathA) {
+			log.OpenFile(logPathA);
+			free(logPathA);
+		}
+	}
 }
 
 RdpProvider::~RdpProvider()
@@ -151,7 +194,7 @@ STDMETHODIMP RdpProvider::SetSerialization(const CREDENTIAL_PROVIDER_CREDENTIAL_
 	return hr;
 }
 
-HRESULT RdpProvider::Advise(ICredentialProviderEvents* pcpe, UINT_PTR upAdviseContext)
+HRESULT RdpProvider::Advise(__in ICredentialProviderEvents* pcpe, UINT_PTR upAdviseContext)
 {
 	UNREFERENCED_PARAMETER(pcpe);
 	UNREFERENCED_PARAMETER(upAdviseContext);
@@ -168,7 +211,7 @@ HRESULT RdpProvider::UnAdvise()
 	return E_NOTIMPL;
 }
 
-HRESULT RdpProvider::GetFieldDescriptorCount(DWORD* pdwCount)
+HRESULT RdpProvider::GetFieldDescriptorCount(__out DWORD* pdwCount)
 {
 	*pdwCount = SFI_NUM_FIELDS;
 
@@ -177,7 +220,7 @@ HRESULT RdpProvider::GetFieldDescriptorCount(DWORD* pdwCount)
 	return S_OK;
 }
 
-HRESULT RdpProvider::GetFieldDescriptorAt(DWORD dwIndex, CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR** ppcpfd)
+HRESULT RdpProvider::GetFieldDescriptorAt(DWORD dwIndex, __deref_out CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR** ppcpfd)
 {    
 	HRESULT hr;
 
@@ -195,20 +238,27 @@ HRESULT RdpProvider::GetFieldDescriptorAt(DWORD dwIndex, CREDENTIAL_PROVIDER_FIE
 	return hr;
 }
 
-HRESULT RdpProvider::GetCredentialCount(DWORD* pdwCount, DWORD* pdwDefault, BOOL* pbAutoLogonWithDefault)
+HRESULT RdpProvider::GetCredentialCount(__out DWORD* pdwCount, __out DWORD* pdwDefault, __out BOOL* pbAutoLogonWithDefault)
 {
 	HRESULT hr = S_OK;
 
 	log.Write("RdpProvider::GetCredentialCount");
 
-	*pdwCount = 1;
-	*pdwDefault = 0;
-	*pbAutoLogonWithDefault = _bAutoLogonWithDefault ? TRUE : FALSE;
+	if (!_bUseDefaultCredentials) {
+		*pdwCount = 0;
+		*pdwDefault = 0;
+		*pbAutoLogonWithDefault = FALSE;
+	}
+	else {
+		*pdwCount = 1;
+		*pdwDefault = 0;
+		*pbAutoLogonWithDefault = _bAutoLogonWithDefault ? TRUE : FALSE;
+	}
 
 	return hr;
 }
 
-HRESULT RdpProvider::GetCredentialAt(DWORD dwIndex, ICredentialProviderCredential** ppcpc)
+HRESULT RdpProvider::GetCredentialAt(DWORD dwIndex, __out ICredentialProviderCredential** ppcpc)
 {
 	HRESULT hr;
 
@@ -235,11 +285,12 @@ HRESULT RdpProvider::_EnumerateCredentials()
     WCHAR szPassword[256] = { 0 };
     WCHAR szDomain[256] = { 0 };
 	DWORD dwAutoLogonWithDefault = 0;
+	DWORD dwUseDefaultCredentials = 0;
     DWORD cbSize;
     
     log.Write("RdpProvider::_EnumerateCredentials");
 
-    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\RdpCredProv", 0, KEY_READ, &hKey) == ERROR_SUCCESS)
+    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, RDPCREDPROV_REGPATH, 0, KEY_READ, &hKey) == ERROR_SUCCESS)
     {
         cbSize = sizeof(szUser);
         RegQueryValueExW(hKey, L"DefaultUserName", nullptr, nullptr, (LPBYTE)szUser, &cbSize);
@@ -254,6 +305,10 @@ HRESULT RdpProvider::_EnumerateCredentials()
 		RegQueryValueExW(hKey, L"AutoLogonWithDefault", nullptr, nullptr, (LPBYTE)&dwAutoLogonWithDefault, &cbSize);
 		_bAutoLogonWithDefault = (dwAutoLogonWithDefault != 0);
 
+		cbSize = sizeof(dwUseDefaultCredentials);
+		RegQueryValueExW(hKey, L"UseDefaultCredentials", nullptr, nullptr, (LPBYTE)&dwUseDefaultCredentials, &cbSize);
+		_bUseDefaultCredentials = (dwUseDefaultCredentials != 0);
+
         RegCloseKey(hKey);
 
         RdpCredential* ppc = new RdpCredential();
@@ -261,10 +316,10 @@ HRESULT RdpProvider::_EnumerateCredentials()
         if (ppc)
         {
             LPCWSTR pwzUser = *szUser ? szUser : L"";
-            LPCWSTR pwzPass = *szPassword ? szPassword : L"";
+            LPCWSTR pwzPassword = *szPassword ? szPassword : L"";
             LPCWSTR pwzDomain = *szDomain ? szDomain : L"";
 
-            hr = ppc->Initialize(_cpus, s_rgCredProvFieldDescriptors, s_rgFieldStatePairs, pwzUser, pwzPass, pwzDomain);
+            hr = ppc->Initialize(_cpus, s_rgCredProvFieldDescriptors, s_rgFieldStatePairs, pwzUser, pwzPassword, pwzDomain);
 
             if (SUCCEEDED(hr))
             {
@@ -289,7 +344,7 @@ HRESULT RdpProvider::_EnumerateCredentials()
     return hr;
 }
 
-HRESULT RdpProvider_CreateInstance(REFIID riid, void** ppv)
+HRESULT RdpProvider_CreateInstance(REFIID riid, __deref_out void** ppv)
 {
 	HRESULT hr;
 
