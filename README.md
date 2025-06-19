@@ -51,7 +51,23 @@ Set-ItemProperty -Path $RdpCredProvRegPath -Name "AutoLogonWithDefault" -Value 1
 Set-ItemProperty -Path $RdpCredProvRegPath -Name "UseDefaultCredentials" -Value 1 -Type DWORD
 ```
 
-Those credentials will be used automatically in the Hyper-V enhanced session mode. If you want to enable autologon in the Hyper-V basic session mode, set the following registry keys:
+Those credentials will be used automatically in the Hyper-V enhanced session mode, and inside a RDP session with RDP NLA disabled. Here are a few example user names with their correct mapping for reference:
+
+**Administrator** (local account):
+ * DefaultUserName: "Administrator"
+ * DefaultDomainName: "."
+
+**IT-HELP\Administrator** (domain account):
+ * DefaultUserName: "Administrator"
+ * DefaultDomainName: "IT-HELP"
+
+**Administrator@ad.it-help.ninja** (domain account):
+ * DefaultUserName: "Administrator@ad.it-help.ninja"
+ * DefaultDomainName: ""
+
+### Console Session
+
+If you want to enable autologon in the Hyper-V basic session mode, or with the physical (console) session, set the following registry keys:
 
 ```powershell
 $RdpCredProvRegPath = "HKLM:\SOFTWARE\Devolutions\RdpCredProv"
@@ -59,6 +75,24 @@ Set-ItemProperty -Path $RdpCredProvRegPath -Name "RemoteOnly" -Value 0 -Type DWO
 $WinlogonRegPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
 Set-ItemProperty -Path $WinlogonRegPath -Name "DisableCAD" -Value 1 -Type DWORD
 ```
+
+### RDP without NLA
+
+For regular RDP, a credential provider can only *complement* RDP NLA but not *substitute* it. The only way to really perform autologon in RDP where the client sends no credentials is to disable RDP NLA on the client and server.
+
+With mstsc.exe, save your .RDP file (Default.rdp) and add or edit the following line to it: `enablecredsspsupport:i:0`.
+
+In the RDP server, ensure RDP NLA enforcement is disabled:
+
+```powershell
+Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name 'UserAuthentication' -Value 0
+```
+
+You should now be able to connect with no credentials sent from the client, with a server that will perform automatic logon with the saved credentials.
+
+## RDP with NLA
+
+RDP NLA performs NTLM or Kerberos authentication *before* the full credentials are delegated to the server and sent to Winlogon. This means it is unfortunately not possible for the server to just connect without authenticating, and have the credential provider perform autologon on behalf of the client. The only thing the credential provider can do is customize the authentication with additional steps, but it cannot fully replace it. For this reason, the current credential provider does nothing useful with RDP NLA.
 
 ## Logging
 
