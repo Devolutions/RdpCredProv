@@ -12,13 +12,28 @@ cmake --build . --config Release
 
 ## Installation
 
-Copy RdpCredProv.dll to C:\Windows\System32:
+Download and copy RdpCredProv.dll to C:\Windows\System32:
 
 ```powershell
 Copy-Item RdpCredProv.dll "C:\Windows\System32\RdpCredProv.dll" -Force
 ```
 
-Register it:
+You can also use the following PowerShell code snippet to download and copy the latest version of RdpCredProv:
+
+```powershell
+$ProgressPreference = "SilentlyContinue"
+$NativeArch = if ($Env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { "arm64" } else { "x64" }
+$RdpCredProvVersion = (Invoke-RestMethod "https://api.github.com/repos/Devolutions/RdpCredProv/releases/latest").tag_name.TrimStart("v")
+$RdpCredProvUrl = "https://github.com/Devolutions/RdpCredProv/releases/download/v$RdpCredProvVersion/RdpCredProv-$RdpCredProvVersion-$NativeArch.zip"
+Invoke-WebRequest -UseBasicParsing -Uri $RdpCredProvUrl -OutFile "RdpCredProv.zip"
+$TempExtractPath = Join-Path $Env:TEMP "RdpCredProv"
+Expand-Archive -Path ".\RdpCredProv.zip" -DestinationPath $TempExtractPath
+Copy-Item "$TempExtractPath\RdpCredProv.dll" "$Env:SystemRoot\System32\RdpCredProv.dll" -Force
+Remove-Item -Path $TempExtractPath -Recurse | Out-Null
+Remove-Item "RdpCredProv.zip" | Out-Null
+```
+
+Then register the credential provider:
 
 ```powershell
 $RdpCredProvClsid = "{DD2ACC5E-EF4B-4C89-B296-15489C9FAC47}"
@@ -26,7 +41,7 @@ $basePath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Cred
 New-Item -Path $basePath -Force | Out-Null
 Set-ItemProperty -Path $basePath -Name "(default)" -Value "RdpCredProv"
 $clsidRegPath = "CLSID\$RdpCredProvClsid"
-$inprocPath = "CLSID\$$RdpCredProvClsid\InprocServer32"
+$inprocPath = "CLSID\$RdpCredProvClsid\InprocServer32"
 $regHKCR = [Microsoft.Win32.Registry]::ClassesRoot
 $cpKey = $regHKCR.CreateSubKey($clsidRegPath)
 $cpKey.SetValue("", "RdpCredProv")
@@ -67,13 +82,20 @@ Those credentials will be used automatically in the Hyper-V enhanced session mod
 
 ### Console Session
 
-If you want to enable autologon in the Hyper-V basic session mode, or with the physical (console) session, set the following registry keys:
+If you want to enable autologon in the Hyper-V basic session mode, or with the physical (console) session, set **RemoteOnly** to **0**:
 
 ```powershell
 $RdpCredProvRegPath = "HKLM:\SOFTWARE\Devolutions\RdpCredProv"
 Set-ItemProperty -Path $RdpCredProvRegPath -Name "RemoteOnly" -Value 0 -Type DWORD
+```
+
+For a completely automatic logon, disable the Ctrl+Alt+Del (CAD) secure access sequence:
+
+```powershell
 $WinlogonRegPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
 Set-ItemProperty -Path $WinlogonRegPath -Name "DisableCAD" -Value 1 -Type DWORD
+$SystemPoliciesRegPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+Set-ItemProperty -Path $SystemPoliciesRegPath -Name "DisableCAD" -Value 1 -Type DWORD
 ```
 
 ### RDP without NLA
